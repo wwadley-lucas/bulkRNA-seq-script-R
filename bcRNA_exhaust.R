@@ -95,6 +95,13 @@ GO <- list(
   ont_choice    = "ALL",   # "BP"/"MF"/"CC"/"ALL"
   W = 9, H = 7.5, DPI = 300
 )
+
+##### HEATMAP SETTINGS #####
+heatmap_cfg <- list(
+  cutree_rows = 10,
+  fontsize     = 10,
+  fontsize_row = 5
+)
 ##### OUTPUT SUBFOLDERS #####
 # Define all output subfolders
 outs <- list(
@@ -272,30 +279,34 @@ GO$group_col      <- main_var
 ##### PRELIMINARY HEATMAPS #####
 res       <- results(dds)
 res_group <- results(dds_grouped)
-DEG_genes          <- rownames(res)[which(res$padj < thr$pval & abs(res$log2FoldChange) > thr$log2fc)]
-DEG_genes_grouped  <- rownames(res_group)[which(res_group$padj < thr$pval & abs(res_group$log2FoldChange) > thr$log2fc)]
+deg_genes          <- rownames(res)[which(res$padj < thr$pval & abs(res$log2FoldChange) > thr$log2fc)]
+deg_genes_grouped  <- rownames(res_group)[which(res_group$padj < thr$pval & abs(res_group$log2FoldChange) > thr$log2fc)]
 dir.create(outs$tables, showWarnings = FALSE, recursive = TRUE)
-write.csv(data.frame(gene = DEG_genes),          file.path(outs$tables, "DEG_genes.csv"),          row.names = FALSE)
-write.csv(data.frame(gene = DEG_genes_grouped),  file.path(outs$tables, "DEG_genes_grouped.csv"),  row.names = FALSE)
+write.csv(data.frame(gene = deg_genes),          file.path(outs$tables, "DEG_genes.csv"),          row.names = FALSE)
+write.csv(data.frame(gene = deg_genes_grouped),  file.path(outs$tables, "DEG_genes_grouped.csv"),  row.names = FALSE)
 
 count_matrix         <- counts(dds, normalized = TRUE)
 count_matrix_grouped <- counts(dds_grouped, normalized = TRUE)
-DEG_count_matrix         <- count_matrix[DEG_genes, , drop = FALSE]
-DEG_count_matrix_grouped <- count_matrix_grouped[DEG_genes_grouped, , drop = FALSE]
+deg_count_matrix         <- count_matrix[deg_genes, , drop = FALSE]
+deg_count_matrix_grouped <- count_matrix_grouped[deg_genes_grouped, , drop = FALSE]
 
-if (nrow(DEG_count_matrix) >= 2) {
-  ph1 <- pheatmap(DEG_count_matrix, cluster_rows = TRUE, cluster_cols = FALSE,
+if (nrow(deg_count_matrix) >= 2) {
+  ph1 <- pheatmap(deg_count_matrix, cluster_rows = TRUE, cluster_cols = FALSE,
                   show_rownames = FALSE, show_colnames = TRUE, border_color = NA,
-                  fontsize = 10, cutree_rows = 10, clustering_distance_rows = "correlation",
-                  scale = "row", color = colorRampPalette(c("blue","white","red"))(100), fontsize_row = 5)
+                  fontsize = heatmap_cfg$fontsize, cutree_rows = heatmap_cfg$cutree_rows,
+                  clustering_distance_rows = "correlation",
+                  scale = "row", color = colorRampPalette(c("blue","white","red"))(100),
+                  fontsize_row = heatmap_cfg$fontsize_row)
   pdf(file.path(outs$plots, "DEG_count_matrix_heatmap.pdf"), width = 8, height = 6); grid::grid.draw(ph1$gtable); dev.off()
 } else message("No DEG rows (ungrouped).")
 
-if (nrow(DEG_count_matrix_grouped) >= 2) {
-  ph2 <- pheatmap(DEG_count_matrix_grouped, cluster_rows = TRUE, cluster_cols = FALSE,
+if (nrow(deg_count_matrix_grouped) >= 2) {
+  ph2 <- pheatmap(deg_count_matrix_grouped, cluster_rows = TRUE, cluster_cols = FALSE,
                   show_rownames = FALSE, show_colnames = TRUE, border_color = NA,
-                  fontsize = 10, cutree_rows = 10, clustering_distance_rows = "correlation",
-                  scale = "row", color = colorRampPalette(c("blue","white","red"))(100), fontsize_row = 5)
+                  fontsize = heatmap_cfg$fontsize, cutree_rows = heatmap_cfg$cutree_rows,
+                  clustering_distance_rows = "correlation",
+                  scale = "row", color = colorRampPalette(c("blue","white","red"))(100),
+                  fontsize_row = heatmap_cfg$fontsize_row)
   pdf(file.path(outs$plots, "DEG_count_matrix_grouped_heatmap.pdf"), width = 8, height = 6); grid::grid.draw(ph2$gtable); dev.off()
 } else message("No DEG rows (grouped).")
 
@@ -355,14 +366,14 @@ dev.off()
 
 # Sample distance heatmap
 vsd <- vsd_blind
-sampleDists <- dist(t(assay(vsd)))
-sampleDistMatrix <- as.matrix(sampleDists)
-rownames(sampleDistMatrix) <- paste0(rownames(colData(vsd)))
+sample_dists <- dist(t(assay(vsd)))
+sample_dist_matrix <- as.matrix(sample_dists)
+rownames(sample_dist_matrix) <- paste0(rownames(colData(vsd)))
 colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
 pdf(file.path(outs$plots, "sample_distance_heatmap.pdf"), width = 8, height = 6)
-pheatmap(sampleDistMatrix,
-         clustering_distance_rows = sampleDists,
-         clustering_distance_cols = sampleDists,
+pheatmap(sample_dist_matrix,
+         clustering_distance_rows = sample_dists,
+         clustering_distance_cols = sample_dists,
          col = colors, show_colnames = TRUE, show_rownames = TRUE)
 dev.off()
 
@@ -445,82 +456,94 @@ parse_AB <- function(coef_name, main_var) {
   list(A = A, B = B)
 }
 
-run_go_for_coef <- function(coef_name) {
-  message("\n=== GO: ", coef_name, " ===")
+prepare_go_genes <- function(coef_name) {
   res <- results(dds_grouped, name = coef_name, alpha = thr$go_alpha_padj)
   df  <- as.data.frame(res)
-  
+
   row_ids <- rownames(df)
   gene_list_vals <- df$log2FoldChange; names(gene_list_vals) <- row_ids
   gene_list_vals <- sort(na.omit(gene_list_vals), decreasing = TRUE)
   universe_syms <- ensure_symbols(names(gene_list_vals))
-  if (length(universe_syms) < 20) { warning("Small universe for ", coef_name); return(invisible(NULL)) }
-  
+  if (length(universe_syms) < 20) { warning("Small universe for ", coef_name); return(NULL) }
+
   sig_df <- df %>% dplyr::filter(!is.na(padj), padj < thr$go_alpha_padj, !is.na(log2FoldChange))
-  sig_ids <- rownames(sig_df); if (!length(sig_ids)) { warning("No sig genes: ", coef_name); return(invisible(NULL)) }
-  
+  sig_ids <- rownames(sig_df); if (!length(sig_ids)) { warning("No sig genes: ", coef_name); return(NULL) }
+
   sym_map <- data.frame(id = sig_ids, symbol = ensure_symbols(sig_ids), lfc = sig_df$log2FoldChange,
                         stringsAsFactors = FALSE) %>%
     dplyr::filter(!is.na(symbol)) %>% dplyr::group_by(symbol) %>%
     dplyr::slice_max(order_by = abs(lfc), n = 1, with_ties = FALSE) %>% dplyr::ungroup()
-  
+
   genes_all <- sym_map %>% dplyr::filter(abs(lfc) > thr$go_lfc_cut) %>% dplyr::pull(symbol) %>% unique()
-  if (length(genes_all) < 5) { warning("Too few genes after |LFC|: ", coef_name); return(invisible(NULL)) }
-  
-  ego <- enrichGO(gene = genes_all, universe = universe_syms, OrgDb = org.Mm.eg.db, keyType = "SYMBOL",
-                  ont = GO$ont_choice, pAdjustMethod = "BH", pvalueCutoff = 0.05, qvalueCutoff = 0.05,
-                  minGSSize = GO$minGSSize, maxGSSize = GO$maxGSSize, readable = TRUE)
-  if (is.null(ego) || nrow(as.data.frame(ego)) == 0) { warning("No GO terms: ", coef_name); return(invisible(NULL)) }
-  
-  ego_s <- if (GO$do_simplify) {
-    tryCatch(simplify(ego, cutoff = 0.7, by = "p.adjust", select_fun = min, measure = "Wang"),
-             error = function(e) { warning("simplify() failed: ", e$message); ego })
-  } else ego
-  
-  base <- safe_name(coef_name)
+  if (length(genes_all) < 5) { warning("Too few genes after |LFC|: ", coef_name); return(NULL) }
+
+  list(universe_syms = universe_syms, sym_map = sym_map, genes_all = genes_all)
+}
+
+plot_go_enrichment <- function(ego, ego_s, base, coef_name) {
   write.csv(as.data.frame(ego),   file.path(outs$go_tables_raw,   paste0(base, ".csv")), row.names = FALSE)
   write.csv(as.data.frame(ego_s), file.path(outs$go_tables_simpl, paste0(base, ".csv")), row.names = FALSE)
-  
+
   p_bar_raw <- barplot(ego, showCategory = 10, drop = TRUE, font.size = 4, split = "ONTOLOGY") +
     facet_grid(ONTOLOGY ~ ., scales = "free_y")
   p_bar_raw <- wrap_go_labels(p_bar_raw)
   p_bar_raw <- add_title(p_bar_raw, paste0("GO (", GO$ont_choice, ") — bar (raw): ", coef_name))
   save_plot_both(file.path(outs$go_plots_bar_raw, paste0(base, "_bar_raw")), p_bar_raw, w = GO$W, h = GO$H, dpi = GO$DPI)
-  
+
   p_dot_raw <- dotplot(ego, showCategory = 10, split = "ONTOLOGY", font.size = 4) +
     facet_grid(ONTOLOGY ~ ., scales = "free_y")
   p_dot_raw <- wrap_go_labels(p_dot_raw)
   p_dot_raw <- shrink_dots(p_dot_raw, range = c(1.2, 4))
   p_dot_raw <- add_title(p_dot_raw, paste0("GO (", GO$ont_choice, ") — dot (raw): ", coef_name))
   save_plot_both(file.path(outs$go_plots_dot_raw, paste0(base, "_dot_raw")), p_dot_raw, w = GO$W, h = GO$H, dpi = GO$DPI)
-  
+
   p_bar_s <- barplot(ego_s, showCategory = 10, drop = TRUE, font.size = 4, split = "ONTOLOGY") +
     facet_grid(ONTOLOGY ~ ., scales = "free_y")
   p_bar_s <- wrap_go_labels(p_bar_s)
   p_bar_s <- add_title(p_bar_s, paste0("GO (", GO$ont_choice, ") — bar (simplified): ", coef_name))
   save_plot_both(file.path(outs$go_plots_bar_simpl, paste0(base, "_bar_simpl")), p_bar_s, w = GO$W, h = GO$H, dpi = GO$DPI)
-  
+
   p_dot_s <- dotplot(ego_s, showCategory = 10, split = "ONTOLOGY", font.size = 4) +
     facet_grid(ONTOLOGY ~ ., scales = "free_y")
   p_dot_s <- wrap_go_labels(p_dot_s)
   p_dot_s <- shrink_dots(p_dot_s, range = c(1.2, 4))
   p_dot_s <- add_title(p_dot_s, paste0("GO (", GO$ont_choice, ") — dot (simplified): ", coef_name))
   save_plot_both(file.path(outs$go_plots_dot_simpl, paste0(base, "_dot_simpl")), p_dot_s, w = GO$W, h = GO$H, dpi = GO$DPI)
-  
+}
+
+run_go_for_coef <- function(coef_name) {
+  message("\n=== GO: ", coef_name, " ===")
+
+  prep <- prepare_go_genes(coef_name)
+  if (is.null(prep)) return(invisible(NULL))
+
+  ego <- enrichGO(gene = prep$genes_all, universe = prep$universe_syms, OrgDb = org.Mm.eg.db, keyType = "SYMBOL",
+                  ont = GO$ont_choice, pAdjustMethod = "BH", pvalueCutoff = 0.05, qvalueCutoff = 0.05,
+                  minGSSize = GO$minGSSize, maxGSSize = GO$maxGSSize, readable = TRUE)
+  if (is.null(ego) || nrow(as.data.frame(ego)) == 0) { warning("No GO terms: ", coef_name); return(invisible(NULL)) }
+
+  ego_s <- if (GO$do_simplify) {
+    tryCatch(simplify(ego, cutoff = 0.7, by = "p.adjust", select_fun = min, measure = "Wang"),
+             error = function(e) { warning("simplify() failed: ", e$message); ego })
+  } else ego
+
+  base <- safe_name(coef_name)
+  plot_go_enrichment(ego, ego_s, base, coef_name)
+
   ab <- parse_AB(coef_name, main_var); A <- ab$A; B <- ab$B
-  sig_up_A <- sym_map %>% dplyr::filter(lfc >  thr$go_lfc_cut) %>% dplyr::pull(symbol)
-  sig_up_B <- sym_map %>% dplyr::filter(lfc < -thr$go_lfc_cut) %>% dplyr::pull(symbol)
-  
+  sig_up_A <- prep$sym_map %>% dplyr::filter(lfc >  thr$go_lfc_cut) %>% dplyr::pull(symbol)
+  sig_up_B <- prep$sym_map %>% dplyr::filter(lfc < -thr$go_lfc_cut) %>% dplyr::pull(symbol)
+
   gene_sets <- list()
   if (length(sig_up_A) >= GO$min_genes_dir) gene_sets[[paste0("Up_in_", A)]] <- sig_up_A
   if (length(sig_up_B) >= GO$min_genes_dir) gene_sets[[paste0("Up_in_", B)]] <- sig_up_B
-  
+
   if (length(gene_sets)) {
     cc <- compareCluster(geneCluster = gene_sets, fun = "enrichGO", OrgDb = org.Mm.eg.db, keyType = "SYMBOL",
                          ont = GO$ont_choice, pAdjustMethod = "BH", pvalueCutoff = 0.05, qvalueCutoff = 0.05,
                          minGSSize = GO$minGSSize, maxGSSize = GO$maxGSSize, readable = TRUE)
     write.csv(as.data.frame(cc), file.path(outs$go_tables_cc, paste0(base, "_compareCluster.csv")), row.names = FALSE)
-    
+
     p_cc <- dotplot(cc, showCategory = 10, split = "ONTOLOGY", font.size = 3) +
       facet_grid(ONTOLOGY ~ ., scales = "free_y")
     p_cc <- wrap_go_labels(p_cc)
@@ -529,7 +552,7 @@ run_go_for_coef <- function(coef_name) {
                       "Direction of enrichment: Up_in_<group>")
     save_plot_both(file.path(outs$go_plots_cc, paste0(base, "_compareCluster_dot")), p_cc, w = GO$W, h = GO$H, dpi = GO$DPI)
   }
-  
+
   invisible(TRUE)
 }
 

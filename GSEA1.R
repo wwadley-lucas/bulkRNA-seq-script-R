@@ -60,6 +60,23 @@ top_plots  <- 100                   # hard cap on plots to make
 pval_cut   <- 0.05                  # plot sets with raw p-value <= this
 NES_positive_group <- "A"           # "A" => NES>0 enriched in A; set "B" to flip
 
+# ---- fgsea parameters ----
+gsea_params <- list(
+  min_size      = 5,
+  max_size      = 1000,
+  gsea_param    = 1,       # weighted (Broad GSEA default)
+  n_perm_simple = 10000,
+  eps           = 0
+)
+
+# ---- plot layout ----
+plot_cfg <- list(
+  rel_heights = c(1.1, 0.30, 1.0),   # ES panel, hit indices, ranked metric
+  width       = 7.6,
+  height      = 5.8,
+  dpi         = 300
+)
+
 # ==============================
 # 2) HELPERS
 # ==============================
@@ -197,11 +214,11 @@ set.seed(42)
 fg <- fgsea::fgseaMultilevel(
   pathways    = pathways,
   stats       = stats,
-  minSize     = 5,       # was 10
-  maxSize     = 1000,    # was 5000
-  gseaParam   = 1,       # weighted (Broad GSEA default)
-  nPermSimple = 10000,
-  eps         = 0
+  minSize     = gsea_params$min_size,
+  maxSize     = gsea_params$max_size,
+  gseaParam   = gsea_params$gsea_param,
+  nPermSimple = gsea_params$n_perm_simple,
+  eps         = gsea_params$eps
 )
 fg <- fg[order(fg$pval, -fg$NES), ]
 fg <- fg[!is.na(fg$NES), ]  # drop any sets with NA NES before plotting
@@ -221,9 +238,9 @@ message("Saved fgsea table: ", out_csv)
 gsea_cp <- clusterProfiler::GSEA(
   geneList      = stats,
   TERM2GENE     = t2g,
-  exponent      = 1,     # weighted (Broad GSEA default)
-  minGSSize     = 5,
-  maxGSSize     = 1000,
+  exponent      = gsea_params$gsea_param,
+  minGSSize     = gsea_params$min_size,
+  maxGSSize     = gsea_params$max_size,
   pvalueCutoff  = 1.0,
   pAdjustMethod = "BH",
   seed          = TRUE,
@@ -278,13 +295,13 @@ for (i in seq_len(nrow(pick))) {
   # Align and stack
   aligned <- cowplot::align_plots(p_es, p_hits, p_rank, align = "v", axis = "lr")
   p_final <- cowplot::plot_grid(plotlist = aligned, ncol = 1,
-                                rel_heights = c(1.1, 0.30, 1.0))
+                                rel_heights = plot_cfg$rel_heights)
   
   out_png <- file.path(
     plot_dir,
     paste0(safe_name(groupA), "_vs_", safe_name(groupB), "__", gsub("[^A-Za-z0-9]+","_", gs), ".png")
   )
-  save_png_white(out_png, p_final, width = 7.6, height = 5.8, dpi = 300)
+  save_png_white(out_png, p_final, width = plot_cfg$width, height = plot_cfg$height, dpi = plot_cfg$dpi)
 }
 
 message("Plots saved to: ", plot_dir)
