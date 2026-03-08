@@ -45,8 +45,8 @@ design_formula_grouped <- ~ Exposure
 paths <- list(
   project_dir  = "PATH/TO/FILE/DIRECTORY",
   counts_csv   = "Tables/All probes.csv", #expression raw counts
-  meta_csv     = "Tables/metaData.csv",
-  meta_grouped = "Tables/metaData.csv",  # reuse if only one meta
+  meta_csv     = "Tables/meta_data.csv",
+  meta_grouped = "Tables/meta_data.csv",  # reuse if only one meta
   out_base     = "Figures/"
 )
 if (grepl("^PATH/TO", paths$project_dir)) {
@@ -229,32 +229,32 @@ add_title <- function(p, title, subtitle = NULL, width = 60) {
 
 ##### LOAD COUNTS/META #####
 df <- read.csv(paths$counts_csv, header = TRUE, sep = ",", row.names = 1)
-countData <- as.matrix(df)
-countData[is.na(countData) | is.nan(countData) | is.infinite(countData)] <- 0
-countData <- countData[apply(countData, 1, var) != 0, , drop = FALSE]
+count_data <- as.matrix(df)
+count_data[is.na(count_data) | is.nan(count_data) | is.infinite(count_data)] <- 0
+count_data <- count_data[apply(count_data, 1, var) != 0, , drop = FALSE]
 
-metaData         <- read.csv(paths$meta_csv, header = TRUE, sep = ",", row.names = 1, fill = TRUE)
-metaData_grouped <- read.csv(paths$meta_grouped, header = TRUE, sep = ",", row.names = 1, fill = TRUE)
+meta_data         <- read.csv(paths$meta_csv, header = TRUE, sep = ",", row.names = 1, fill = TRUE)
+meta_data_grouped <- read.csv(paths$meta_grouped, header = TRUE, sep = ",", row.names = 1, fill = TRUE)
 
-stopifnot(identical(colnames(countData), rownames(metaData)))
-stopifnot(identical(colnames(countData), rownames(metaData_grouped)))
+stopifnot(identical(colnames(count_data), rownames(meta_data)))
+stopifnot(identical(colnames(count_data), rownames(meta_data_grouped)))
 
 design_vars_default <- all.vars(as.formula(design_formula_default))
 for (v in design_vars_default) {
-  if (any(is.na(metaData[[v]]))) {
+  if (any(is.na(meta_data[[v]]))) {
     stop("NA values found in design variable column: ", v,
-         "\nRows with NA: ", paste(which(is.na(metaData[[v]])), collapse = ", "))
+         "\nRows with NA: ", paste(which(is.na(meta_data[[v]])), collapse = ", "))
   }
 }
 
 ##### CREATE DESEQ2 OBJS #####
-keep <- rowSums(countData) >= 10
-countData <- countData[keep, ]
+keep <- rowSums(count_data) >= 10
+count_data <- count_data[keep, ]
 
-dds <- DESeqDataSetFromMatrix(countData = countData, colData = metaData, design = design_formula_default)
+dds <- DESeqDataSetFromMatrix(countData = count_data, colData = meta_data, design = design_formula_default)
 dds <- DESeq(dds)
 
-dds_grouped <- DESeqDataSetFromMatrix(countData = countData, colData = metaData_grouped, design = design_formula_grouped)
+dds_grouped <- DESeqDataSetFromMatrix(countData = count_data, colData = meta_data_grouped, design = design_formula_grouped)
 keep <- rowSums(counts(dds_grouped)) > 10
 dds_grouped <- dds_grouped[keep, ]
 dds_grouped <- DESeq(dds_grouped)
