@@ -146,8 +146,11 @@ dir.create(plot_dir, showWarnings = FALSE)
 message("Reading expression: ", expr_file)
 # After reading the raw counts matrix X
 X <- read_matrix(expr_file)
-# Transform raw counts -> log2(CPM + 1)
-X <- cpm(X, log = TRUE, prior.count = 1)  # or log2((counts/sum)*1e6 + 1)
+# NOTE: edgeR::cpm(log = TRUE) computes log2(CPM + prior.count), NOT natural log.
+# Input MUST be raw (unnormalized) integer counts; cpm() handles library-size
+# normalization internally. If your matrix is already log-transformed or TPM/FPKM,
+# skip this step to avoid double-transformation.
+X <- cpm(X, log = TRUE, prior.count = 1)
 
 message("Reading class file: ", cls_file)
 cls <- read_cls(cls_file)
@@ -207,7 +210,14 @@ out_csv <- file.path(out_dir, sprintf("%s_vs_%s__fgsea_results.csv", safe_name(g
 fwrite(as.data.table(fg), out_csv)
 message("Saved fgsea table: ", out_csv)
 
-# ---------- clusterProfiler object (for pretty ES curve) ----------
+# ---------- clusterProfiler GSEA (cross-validation + plotting) ----------
+# We run BOTH fgsea (above) and clusterProfiler::GSEA() intentionally:
+#   1. fgsea::fgseaMultilevel — fast adaptive multilevel splitting; produces the
+#      primary results table (NES, p-value, leading edge) saved to CSV.
+#   2. clusterProfiler::GSEA — wraps fgsea internally but returns a GSEA-result
+#      S4 object that enrichplot::gseaplot2() requires for the aligned ES/hit/rank
+#      panel figures. It also serves as cross-validation: if NES sign or significance
+#      disagree between the two runs, that flags instability worth investigating.
 gsea_cp <- clusterProfiler::GSEA(
   geneList      = stats,
   TERM2GENE     = t2g,

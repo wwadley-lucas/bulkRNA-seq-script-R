@@ -1,3 +1,16 @@
 renv/library/
 renv/staging/
 renv/sandbox/
+
+# Generated outputs
+*.pdf
+*.tiff
+*.png
+output/
+results/
+
+# R session files
+*.rds
+.RData
+.Rhistory
+Rplots.pdf

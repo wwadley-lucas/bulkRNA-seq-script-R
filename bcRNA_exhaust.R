@@ -32,7 +32,6 @@ suppressPackageStartupMessages({
   library(clusterProfiler)
   library(enrichplot)
   library(cowplot)
-  library(stringr)
   library(patchwork)
   library(grid)
   library(ragg)
@@ -160,7 +159,9 @@ map_to_symbol <- function(ids) {
 }
 ensure_symbols <- function(id_vec) {
   if (length(id_vec) == 0) return(character())
-  looks_ens <- any(grepl("^ENSMUSG", id_vec))
+  # Species-aware Ensembl prefix: ENSMUSG (mouse) vs ENSG (human)
+  ens_pattern <- if (species_msigdb == "Mus musculus") "^ENSMUSG" else "^ENSG"
+  looks_ens <- any(grepl(ens_pattern, id_vec))
   if (!looks_ens) return(id_vec)
   sym <- map_to_symbol(id_vec); out <- sym[!is.na(sym)]; unname(out)
 }
@@ -385,7 +386,7 @@ if (!volcano$group_col %in% colnames(colData(dds_grouped))) {
         xlab = bquote(~Log[2]~ 'fold change'),
         pCutoff = thr$volcano_p, FCcutoff = thr$volcano_log2,
         pointSize = 0.75, labSize = 4.0, colAlpha = 0.75,
-        legendPosition = "none", drawConnectors = F, max.overlaps = 1000,
+        legendPosition = "none", drawConnectors = FALSE, max.overlaps = 1000
       ) + theme(plot.title.position = "plot",
                 plot.title = element_text(lineheight = 0.95, margin = margin(b = 6)),
                 plot.margin = margin(10, 18, 10, 10))
@@ -442,14 +443,6 @@ parse_AB <- function(coef_name, main_var) {
   A <- sub("_vs_.*$", "", core)
   B <- sub("^.*_vs_", "", core)
   list(A = A, B = B)
-}
-
-add_title <- function(p, title, subtitle = NULL, width = 60) {
-  p + labs(title = stringr::str_wrap(title, width),
-           subtitle = if (!is.null(subtitle)) stringr::str_wrap(subtitle, width) else NULL) +
-    theme(plot.title.position = "plot",
-          plot.title = element_text(lineheight = 0.98, margin = margin(b = 6)),
-          plot.subtitle = element_text(lineheight = 0.98, margin = margin(b = 8)))
 }
 
 run_go_for_coef <- function(coef_name) {
