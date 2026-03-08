@@ -22,6 +22,9 @@ suppressPackageStartupMessages({
 # ---- Input files ----
 expr_file <- "PATH/TO/FILE/EXPRESSION FILE"
 cls_file  <- "PATH/TO/FILE/GSEA CLS FILE"
+if (grepl("^PATH/TO", expr_file) || grepl("^PATH/TO", cls_file)) {
+  stop("Please set expr_file and cls_file to actual file paths before running.")
+}
 
 # ---- Groups to compare (must match CLS labels) ---- 
 #manual inputs
@@ -35,6 +38,9 @@ msig_subcol     <- "CP:BIOCARTA"             # e.g. "GO:BP" when collection="C5"
 
 # ---- Output and plotting ----
 out_dir    <- "PATH/TO/FILE/OUTPUT DIRECTORY"
+if (grepl("^PATH/TO", out_dir)) {
+  stop("Please set out_dir to an actual output directory before running.")
+}
 top_plots  <- 100                   # hard cap on plots to make
 pval_cut   <- 0.05                  # plot sets with raw p-value <= this
 NES_positive_group <- "A"           # "A" => NES>0 enriched in A; set "B" to flip

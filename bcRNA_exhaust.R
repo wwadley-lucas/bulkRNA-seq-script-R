@@ -36,6 +36,9 @@ paths <- list(
   meta_grouped = "Tables/metaData.csv",  # reuse if only one meta
   out_base     = "Figures/"
 )
+if (grepl("^PATH/TO", paths$project_dir)) {
+  stop("Please set paths$project_dir to your actual project directory before running.")
+}
 FIG <- list(W = 8, H = 6, DPI = 600)
 species_msigdb <- "Mus musculus"   # or "Homo sapiens"
 ##### THRESHOLDS #####
@@ -206,10 +209,12 @@ stopifnot(identical(colnames(countData), rownames(metaData_grouped)))
 
 ##### CREATE DESEQ2 OBJS #####
 dds <- DESeqDataSetFromMatrix(countData = countData, colData = metaData, design = design_formula_default)
-dds <- DESeq(dds); estimateSizeFactors(dds); estimateDispersions(dds); nbinomWaldTest(dds)
+dds <- DESeq(dds)
 
 dds_grouped <- DESeqDataSetFromMatrix(countData = countData, colData = metaData_grouped, design = design_formula_grouped)
-dds_grouped <- DESeq(dds_grouped); estimateSizeFactors(dds_grouped); estimateDispersions(dds_grouped); nbinomWaldTest(dds_grouped)
+keep <- rowSums(counts(dds_grouped)) > 10
+dds_grouped <- dds_grouped[keep, ]
+dds_grouped <- DESeq(dds_grouped)
 
 ##### AUTO-DETECT MAIN GROUPING VAR #####
 main_var <- all.vars(design_formula_grouped)[1]   # e.g., "Exposure"
@@ -300,7 +305,6 @@ pheatmap(sampleDistMatrix,
          col = colors, show_colnames = TRUE, show_rownames = TRUE)
 
 ##### VOLCANO PLOTS #####
-dds_grouped <- dds_grouped[rowSums(counts(dds_grouped)) > 10, ]
 if (!volcano$group_col %in% colnames(colData(dds_grouped))) {
   warning("volcano$group_col = '", volcano$group_col, "' not in colData(dds_grouped). Volcano step will be skipped.")
 } else {
