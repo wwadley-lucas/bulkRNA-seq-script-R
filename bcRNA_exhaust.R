@@ -1,3 +1,17 @@
+# =============================================================================
+# bcRNA_exhaust.R
+# Purpose:  Bulk RNA-seq differential expression pipeline with DESeq2, including
+#           QC diagnostics, PCA, heatmaps, volcano plots, ssGSEA, and GO analysis.
+# Author:   Lucas Wadley (Fleischman Lab, UC Irvine)
+# Usage:    Set paths$project_dir and design formulas in the CONFIG sections,
+#           then source("bcRNA_exhaust.R") or run interactively.
+# Inputs:   - Raw counts CSV (genes x samples)
+#           - Sample metadata CSV (rows = samples, columns include design variables)
+# Outputs:  - Figures/ subdirectory tree with PCA, heatmaps, volcanoes, GO plots,
+#             ssGSEA heatmaps, and diagnostic plots (all PDF + PNG)
+#           - Tables/ with DEG lists, ssGSEA scores, and GO enrichment CSVs
+# =============================================================================
+
 ##### PACKAGES #####
 suppressPackageStartupMessages({
   library(DESeq2)
@@ -12,8 +26,8 @@ suppressPackageStartupMessages({
   library(fgsea)
   library(ggpubr)
   library(stringr)
-  library(org.Mm.eg.db)  
-  library(org.Hs.eg.db)# change to org.Hs.eg.db if human
+  library(org.Mm.eg.db)
+  # library(org.Hs.eg.db)  # uncomment if species_msigdb == "Homo sapiens"
   library(AnnotationDbi)
   library(clusterProfiler)
   library(enrichplot)
@@ -48,6 +62,17 @@ paths$out_base     <- file.path(paths$project_dir, paths$out_base)
 
 FIG <- list(W = 8, H = 6, DPI = 600)
 species_msigdb <- "Mus musculus"   # or "Homo sapiens"
+##### SPECIES VALIDATION #####
+# Ensure org.db package matches species_msigdb to prevent silent cross-species errors
+org_db_name <- if (exists("org.Mm.eg.db")) "org.Mm.eg.db" else if (exists("org.Hs.eg.db")) "org.Hs.eg.db" else "unknown"
+is_mouse_db  <- grepl("Mm", org_db_name)
+is_mouse_cfg <- (species_msigdb == "Mus musculus")
+if (is_mouse_db != is_mouse_cfg) {
+  stop("Species mismatch: org.db is '", org_db_name,
+       "' but species_msigdb is '", species_msigdb,
+       "'. Update one to match the other.")
+}
+
 ##### THRESHOLDS #####
 thr <- list(
   pval          = 0.05,
@@ -149,8 +174,9 @@ check_vars_in_coldata <- function(cd, vars) {
 }
 
 # PCA that adapts color/shape/fill + ellipse rules you asked for
-plot_adaptive_pca <- function(dds, design_fml, out_stem, ntop = 2000, title = "PCA") {
-  vsd  <- vst(dds, blind = FALSE)
+plot_adaptive_pca <- function(dds, design_fml, out_stem, ntop = 2000, title = "PCA",
+                              vsd_cache = NULL) {
+  vsd  <- if (!is.null(vsd_cache)) vsd_cache else vst(dds, blind = FALSE)
   vars <- unique(all.vars(design_fml))
   vars <- vars[vars %in% colnames(colData(dds))]
   if (length(vars) == 0) stop("No design variables from the formula are present in colData.")
@@ -232,6 +258,11 @@ keep <- rowSums(counts(dds_grouped)) > 10
 dds_grouped <- dds_grouped[keep, ]
 dds_grouped <- DESeq(dds_grouped)
 
+##### CACHE VST TRANSFORMATIONS #####
+# Compute once, reuse everywhere — vst() is expensive
+vsd_blind  <- vst(dds, blind = TRUE)
+vsd_fitted <- vst(dds, blind = FALSE)
+
 ##### AUTO-DETECT MAIN GROUPING VAR #####
 main_var <- all.vars(design_formula_grouped)[1]   # e.g., "Exposure"
 volcano$group_col <- main_var
@@ -292,33 +323,47 @@ plot_one_set <- function(set_name, matT, matF) {
              filename = file.path(outs$heatmaps_sig, paste0(safe_name(set_name), "_sig.png")))
   }
 }
-vsd_T <- vst(dds, blind = TRUE);  matT <- assay(vsd_T)
-vsd_F <- vst(dds, blind = FALSE); matF <- assay(vsd_F)
+vsd_T <- vsd_blind;  matT <- assay(vsd_T)
+vsd_F <- vsd_fitted; matF <- assay(vsd_F)
 invisible(lapply(hallmark_names, function(nm) { message("Plotting: ", nm); plot_one_set(nm, matT, matF) }))
 
 ##### PCA (ADAPTIVE) #####
-plot_adaptive_pca(dds,         design_formula_default, out_stem = file.path(outs$plots, "PCA_RNASeq"),          title = "PCA of RNA-seq (default design)")
+plot_adaptive_pca(dds,         design_formula_default, out_stem = file.path(outs$plots, "PCA_RNASeq"),          title = "PCA of RNA-seq (default design)", vsd_cache = vsd_fitted)
 plot_adaptive_pca(dds_grouped, design_formula_grouped, out_stem = file.path(outs$plots, "PCA_RNASeq_grouped"),  title = "PCA of RNA-seq (grouped design)")
 
-##### OTHER DIAGNOSTICS #####
+##### OTHER DIAGNOSTICS (saved to file) #####
+# Dispersion estimates
+pdf(file.path(outs$plots, "dispersion_estimates.pdf"), width = 8, height = 6)
 par(mfrow = c(1,1))
 plotDispEsts(dds, ylim = c(1e-6, 1e2))
+dev.off()
+
+# P-value histogram
+pdf(file.path(outs$plots, "pvalue_histogram.pdf"), width = 8, height = 6)
 hist(res$pvalue, breaks = 20, col = "grey")
+dev.off()
+
+# Base mean vs small p-value ratio
+pdf(file.path(outs$plots, "basemean_pvalue_ratio.pdf"), width = 8, height = 6)
 qs    <- c(0, quantile(res$baseMean[res$baseMean > 0], 0:7/7))
 bins  <- cut(res$baseMean, qs)
 levels(bins) <- paste0("~", round(.5*qs[-1] + .5*qs[-length(qs)]))
 ratios <- tapply(res$pvalue, bins, function(p) mean(p < .01, na.rm = TRUE))
 barplot(ratios, xlab = "mean normalized count", ylab = "ratio of small p-values")
+dev.off()
 
-vsd <- vst(dds)
+# Sample distance heatmap
+vsd <- vsd_blind
 sampleDists <- dist(t(assay(vsd)))
 sampleDistMatrix <- as.matrix(sampleDists)
 rownames(sampleDistMatrix) <- paste0(rownames(colData(vsd)))
 colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+pdf(file.path(outs$plots, "sample_distance_heatmap.pdf"), width = 8, height = 6)
 pheatmap(sampleDistMatrix,
          clustering_distance_rows = sampleDists,
          clustering_distance_cols = sampleDists,
          col = colors, show_colnames = TRUE, show_rownames = TRUE)
+dev.off()
 
 ##### VOLCANO PLOTS #####
 if (!volcano$group_col %in% colnames(colData(dds_grouped))) {
@@ -350,14 +395,13 @@ if (!volcano$group_col %in% colnames(colData(dds_grouped))) {
       invisible(TRUE)
     }
     invisible(lapply(pairs, function(p) plot_volcano_for(p[1], p[2])))
-    while (!is.null(dev.list())) dev.off()
   } else {
     message("Not enough groups in '", volcano$group_col, "' for volcano plots.")
   }
 }
 
 ##### ssGSEA #####
-vsd_ssgsea <- vst(dds, blind = FALSE)
+vsd_ssgsea <- vsd_fitted
 expr_matrix <- assay(vsd_ssgsea)
 
 msigdb_gene_sets <- msigdbr(species = species_msigdb, collection = "H")

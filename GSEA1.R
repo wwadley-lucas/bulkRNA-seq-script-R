@@ -1,3 +1,17 @@
+# =============================================================================
+# GSEA1.R
+# Purpose:  Standalone GSEA pipeline using fgsea and clusterProfiler. Reads a
+#           counts matrix + CLS file, ranks genes by signal-to-noise, runs
+#           fgseaMultilevel, and generates aligned enrichment plots.
+# Author:   Lucas Wadley (Fleischman Lab, UC Irvine)
+# Usage:    Set expr_file, cls_file, groupA/groupB, and out_dir below,
+#           then source("GSEA1.R") or run interactively.
+# Inputs:   - Expression matrix (genes x samples, tab/comma-delimited)
+#           - CLS class file (Broad GSEA format: 3-line header + labels)
+# Outputs:  - fgsea results CSV (<out_dir>/<A>_vs_<B>__fgsea_results.csv)
+#           - Enrichment plot PNGs (<out_dir>/<A>_vs_<B>_plots/)
+# =============================================================================
+
 ########################
 ## GSEA FROM SCRATCH  ##
 ## MANUAL FILE INPUTS ##
@@ -9,6 +23,7 @@ suppressPackageStartupMessages({
   library(fgsea)
   library(clusterProfiler)
   library(enrichplot)
+  library(edgeR)
   library(ggplot2)
   library(stringr)
   library(ragg)
@@ -124,14 +139,14 @@ normalize_panel <- function(g, add_border = TRUE) {
 # ==============================
 
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-plot_dir <- file.path(out_dir, sprintf("%s_vs_%s_plots", groupA, groupB))
+safe_name <- function(x) gsub("[^A-Za-z0-9_-]", "_", x)
+plot_dir <- file.path(out_dir, sprintf("%s_vs_%s_plots", safe_name(groupA), safe_name(groupB)))
 dir.create(plot_dir, showWarnings = FALSE)
 
 message("Reading expression: ", expr_file)
 # After reading the raw counts matrix X
 X <- read_matrix(expr_file)
 # Transform raw counts -> log2(CPM + 1)
-library(edgeR)
 X <- cpm(X, log = TRUE, prior.count = 1)  # or log2((counts/sum)*1e6 + 1)
 
 message("Reading class file: ", cls_file)
@@ -182,13 +197,13 @@ fg <- fgsea::fgseaMultilevel(
   minSize     = 5,       # was 10
   maxSize     = 1000,    # was 5000
   gseaParam   = 1,       # weighted (Broad GSEA default)
-  nPermSimple = 1000,
+  nPermSimple = 10000,
   eps         = 0
 )
 fg <- fg[order(fg$pval, -fg$NES), ]
 fg <- fg[!is.na(fg$NES), ]  # drop any sets with NA NES before plotting
 
-out_csv <- file.path(out_dir, sprintf("%s_vs_%s__fgsea_results.csv", groupA, groupB))
+out_csv <- file.path(out_dir, sprintf("%s_vs_%s__fgsea_results.csv", safe_name(groupA), safe_name(groupB)))
 fwrite(as.data.table(fg), out_csv)
 message("Saved fgsea table: ", out_csv)
 
@@ -257,7 +272,7 @@ for (i in seq_len(nrow(pick))) {
   
   out_png <- file.path(
     plot_dir,
-    paste0(groupA, "_vs_", groupB, "__", gsub("[^A-Za-z0-9]+","_", gs), ".png")
+    paste0(safe_name(groupA), "_vs_", safe_name(groupB), "__", gsub("[^A-Za-z0-9]+","_", gs), ".png")
   )
   save_png_white(out_png, p_final, width = 7.6, height = 5.8, dpi = 300)
 }
