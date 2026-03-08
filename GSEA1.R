@@ -181,7 +181,7 @@ fg <- fgsea::fgseaMultilevel(
   stats       = stats,
   minSize     = 5,       # was 10
   maxSize     = 1000,    # was 5000
-  gseaParam   = 0,       # classic (unweighted) instead of 1
+  gseaParam   = 1,       # weighted (Broad GSEA default)
   nPermSimple = 1000,
   eps         = 0
 )
@@ -196,7 +196,7 @@ message("Saved fgsea table: ", out_csv)
 gsea_cp <- clusterProfiler::GSEA(
   geneList      = stats,
   TERM2GENE     = t2g,
-  exponent      = 0,     # classic (unweighted) instead of default 1
+  exponent      = 1,     # weighted (Broad GSEA default)
   minGSSize     = 5,
   maxGSSize     = 1000,
   pvalueCutoff  = 1.0,
