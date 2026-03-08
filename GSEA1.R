@@ -175,7 +175,7 @@ if (!any(overlaps >= 10)) {
 }
 
 # ---------- fgsea table (settings to mirror Broad) ----------
-set.seed(as.integer(Sys.time()))
+set.seed(42)
 fg <- fgsea::fgseaMultilevel(
   pathways    = pathways,
   stats       = stats,

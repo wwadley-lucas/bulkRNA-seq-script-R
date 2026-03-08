@@ -207,7 +207,18 @@ metaData_grouped <- read.csv(paths$meta_grouped, header = TRUE, sep = ",", row.n
 stopifnot(identical(colnames(countData), rownames(metaData)))
 stopifnot(identical(colnames(countData), rownames(metaData_grouped)))
 
+design_vars_default <- all.vars(as.formula(design_formula_default))
+for (v in design_vars_default) {
+  if (any(is.na(metaData[[v]]))) {
+    stop("NA values found in design variable column: ", v,
+         "\nRows with NA: ", paste(which(is.na(metaData[[v]])), collapse = ", "))
+  }
+}
+
 ##### CREATE DESEQ2 OBJS #####
+keep <- rowSums(countData) >= 10
+countData <- countData[keep, ]
+
 dds <- DESeqDataSetFromMatrix(countData = countData, colData = metaData, design = design_formula_default)
 dds <- DESeq(dds)
 
@@ -224,8 +235,8 @@ GO$group_col      <- main_var
 ##### PRELIMINARY HEATMAPS #####
 res       <- results(dds)
 res_group <- results(dds_grouped)
-DEG_genes          <- rownames(res)[which(res$pvalue < thr$pval & abs(res$log2FoldChange) > thr$log2fc)]
-DEG_genes_grouped  <- rownames(res_group)[which(res_group$pvalue < thr$pval & abs(res_group$log2FoldChange) > thr$log2fc)]
+DEG_genes          <- rownames(res)[which(res$padj < thr$pval & abs(res$log2FoldChange) > thr$log2fc)]
+DEG_genes_grouped  <- rownames(res_group)[which(res_group$padj < thr$pval & abs(res_group$log2FoldChange) > thr$log2fc)]
 dir.create(outs$tables, showWarnings = FALSE, recursive = TRUE)
 write.csv(data.frame(gene = DEG_genes),          file.path(outs$tables, "DEG_genes.csv"),          row.names = FALSE)
 write.csv(data.frame(gene = DEG_genes_grouped),  file.path(outs$tables, "DEG_genes_grouped.csv"),  row.names = FALSE)
@@ -252,7 +263,7 @@ if (nrow(DEG_count_matrix_grouped) >= 2) {
 } else message("No DEG rows (grouped).")
 
 ##### MSigDB HEATMAPS #####
-significant_genes <- rownames(res)[which(res$pvalue < thr$pval & abs(res$log2FoldChange) > thr$log2fc)]
+significant_genes <- rownames(res)[which(res$padj < thr$pval & abs(res$log2FoldChange) > thr$log2fc)]
 gene_set <- msigdbr(species = species_msigdb, collection = "C2", subcollection = "CP:BIOCARTA")
 hallmark_names <- sort(unique(gene_set$gs_name))
 my_palette <- colorRampPalette(c("blue", "white", "red"))(100)
