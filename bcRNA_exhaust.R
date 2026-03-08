@@ -39,6 +39,13 @@ paths <- list(
 if (grepl("^PATH/TO", paths$project_dir)) {
   stop("Please set paths$project_dir to your actual project directory before running.")
 }
+
+## Resolve relative paths against project_dir (avoids setwd())
+paths$counts_csv   <- file.path(paths$project_dir, paths$counts_csv)
+paths$meta_csv     <- file.path(paths$project_dir, paths$meta_csv)
+paths$meta_grouped <- file.path(paths$project_dir, paths$meta_grouped)
+paths$out_base     <- file.path(paths$project_dir, paths$out_base)
+
 FIG <- list(W = 8, H = 6, DPI = 600)
 species_msigdb <- "Mus musculus"   # or "Homo sapiens"
 ##### THRESHOLDS #####
@@ -192,8 +199,6 @@ add_title <- function(p, title, subtitle = NULL, width = 60) {
           plot.title   = element_text(lineheight = 0.98, margin = margin(b = 6)),
           plot.subtitle= element_text(lineheight = 0.98, margin = margin(b = 8)))
 }
-
-if (nzchar(paths$project_dir)) setwd(paths$project_dir)
 
 ##### LOAD COUNTS/META #####
 df <- read.csv(paths$counts_csv, header = TRUE, sep = ",", row.names = 1)
@@ -496,3 +501,5 @@ coef_names <- grep(paste0("^", main_var, "_.*_vs_"), resultsNames(dds_grouped), 
 message("Found ", length(coef_names), " contrasts for ", main_var, ".")
 invisible(lapply(coef_names, run_go_for_coef))
 message("\nAll done. Outputs in: ", normalizePath(paths$out_base, mustWork = FALSE))
+
+sessionInfo()
